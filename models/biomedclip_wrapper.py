@@ -52,10 +52,12 @@ def get_biomedclip_features(model, batch):
     """
     # Image features
     image_outputs = model.vision_model(batch['imgs'])
-    if hasattr(image_outputs, 'pooler_output'):
+    if isinstance(image_outputs, tuple):
+        hidden_states = image_outputs[0]
+        image_features = hidden_states[:, 0]  # CLS token
+    elif hasattr(image_outputs, 'pooler_output'):
         image_features = image_outputs.pooler_output
     else:
-        # Use CLS token
         image_features = image_outputs.last_hidden_state[:, 0]
     
     # Text features
@@ -63,10 +65,12 @@ def get_biomedclip_features(model, batch):
         input_ids=batch['caption_ids'],
         attention_mask=batch['attention_mask']
     )
-    if hasattr(text_outputs, 'pooler_output'):
+    if isinstance(text_outputs, tuple):
+        hidden_states = text_outputs[0]
+        text_features = hidden_states[:, 0]  # CLS token
+    elif hasattr(text_outputs, 'pooler_output'):
         text_features = text_outputs.pooler_output
     else:
-        # Use CLS token
         text_features = text_outputs.last_hidden_state[:, 0]
     
     return image_features, text_features
