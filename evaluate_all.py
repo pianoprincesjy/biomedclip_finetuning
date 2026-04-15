@@ -103,7 +103,7 @@ def get_ground_truth(image_path):
         return None
 
 
-def classify_images(image_dir, model, tokenizer, image_processor, device, pattern='*.png'):
+def classify_images(image_dir, model, tokenizer, image_processor, device, seed=42, pattern='*.png'):
     """Classify all images in directory"""
     image_dir = Path(image_dir)
     image_files = sorted(list(image_dir.glob(pattern)))
@@ -111,20 +111,17 @@ def classify_images(image_dir, model, tokenizer, image_processor, device, patter
     if len(image_files) == 0:
         raise ValueError(f"No images found in {image_dir} with pattern {pattern}")
     
-    # Use multiple prompts and average
-    benign_prompts = BENIGN_PROMPTS[:3]  # Use first 3 prompts
-    malignant_prompts = MALIGNANT_PROMPTS[:3]
+    # Randomly select ONE prompt for each class based on seed
+    np.random.seed(seed)
+    benign_prompt = np.random.choice(BENIGN_PROMPTS)
+    malignant_prompt = np.random.choice(MALIGNANT_PROMPTS)
     
-    all_prompts = benign_prompts + malignant_prompts
+    all_prompts = [benign_prompt, malignant_prompt]
     text_features = encode_text(all_prompts, model, tokenizer, device)
     
-    # Split text features
-    benign_text_features = text_features[:len(benign_prompts)]
-    malignant_text_features = text_features[len(benign_prompts):]
-    
-    # Average text features for each class
-    benign_text_avg = benign_text_features.mean(dim=0, keepdim=True)
-    malignant_text_avg = malignant_text_features.mean(dim=0, keepdim=True)
+    # Extract single text features for each class
+    benign_text_avg = text_features[0:1]
+    malignant_text_avg = text_features[1:2]
     
     predictions = []
     ground_truths = []
@@ -294,7 +291,7 @@ def main():
     model.eval()
     
     # Classify images
-    results = classify_images(args.image_dir, model, tokenizer, image_processor, device)
+    results = classify_images(args.image_dir, model, tokenizer, image_processor, device, seed=args.seed)
     
     # Compute metrics
     metrics = compute_metrics(

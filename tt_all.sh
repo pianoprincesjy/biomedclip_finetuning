@@ -33,6 +33,7 @@ EVAL_EPOCHS=(5 20 50)
 LR=2e-5
 WEIGHT_DECAY=0.05
 WARMUP_EPOCHS=20
+SEED=42
 
 # Colors for output
 RED='\033[0;31m'
@@ -152,6 +153,7 @@ for LOSS in "${LOSSES[@]}"; do
                 --loss "$LOSS" \
                 --batch-size "$BATCH_SIZE" \
                 --results-dir "$RESULTS_DIR" \
+                --seed "$SEED" \
                 --gpu 0
             
             if [ $? -eq 0 ]; then
