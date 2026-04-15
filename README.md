@@ -14,22 +14,6 @@ Fine-tune BiomedCLIP with various contrastive loss functions:
 
 Single training script, different loss functions via `--loss` flag.
 
-## Setup
-
-**Prerequisites:**
-- MedCLIP-SAMv2 virtual environment (activate before running)
-- PyTorch 2.0+
-- CUDA-capable GPU (tested on single GPU)
-- Your dataset with images named `benign*.png` or `malignant*.png`
-
-**Activate Environment:**
-```bash
-# Navigate to MedCLIP-SAMv2 directory and activate the virtual environment
-source /path/to/MedCLIP-SAMv2/venv/bin/activate  # Adjust path as needed
-```
-
-All dependencies are already installed in the MedCLIP-SAMv2 environment.
-
 ## Usage
 
 **Train:**
