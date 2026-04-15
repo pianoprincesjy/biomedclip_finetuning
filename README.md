@@ -1,6 +1,7 @@
 # BiomedCLIP Fine-tuning
 
 Quick experiments with different contrastive losses for BiomedCLIP fine-tuning.
+
 This project uses the MedCLIP-SAMv2 virtual environment. Make sure to activate it before running.
 
 ## What's this?
