@@ -24,7 +24,7 @@ GPU_ID=5
 LOSSES=("clip" "siglip" "hnl" "mgca" "gloria")
 
 # Batch sizes to test
-BATCH_SIZES=(1 2 4 20 40 80)
+BATCH_SIZES=(2 4 20 40 80)
 
 # Epochs to evaluate
 EVAL_EPOCHS=(5 20 50)

@@ -128,7 +128,7 @@ def create_loss_function(loss_name):
         raise ValueError(f"Unknown loss function: {loss_name}")
 
 
-def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoch, writer=None, use_mgca=False):
+def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoch, writer=None, use_local_features=False):
     """Train for one epoch"""
     model.train()
     
@@ -148,7 +148,7 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
         }
         
         # Forward pass
-        if use_mgca:
+        if use_local_features:
             # MGCA and GLoRIA require global and local features
             image_features_dict, text_features_dict = get_biomedclip_features_mgca(model, batch_on_device)
             loss, loss_dict = criterion(image_features_dict, text_features_dict)
@@ -168,13 +168,16 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
         
         # Logging
         total_loss += loss.item()
-        if use_mgca:
-            progress_bar.set_postfix({
+        if use_local_features:
+            postfix = {
                 'loss': f'{loss.item():.4f}',
                 'global': f"{loss_dict['loss_global']:.4f}",
                 'local': f"{loss_dict['loss_local']:.4f}",
-                'proto': f"{loss_dict['loss_proto']:.4f}"
-            })
+            }
+            # Add proto loss only if it exists (MGCA has it, GLoRIA doesn't)
+            if 'loss_proto' in loss_dict:
+                postfix['proto'] = f"{loss_dict['loss_proto']:.4f}"
+            progress_bar.set_postfix(postfix)
         else:
             progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
         
@@ -183,10 +186,11 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
             global_step = epoch * len(dataloader) + batch_idx
             writer.add_scalar('train/loss_step', loss.item(), global_step)
             writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], global_step)
-            if use_mgca:
+            if use_local_features:
                 writer.add_scalar('train/loss_global', loss_dict['loss_global'], global_step)
                 writer.add_scalar('train/loss_local', loss_dict['loss_local'], global_step)
-                writer.add_scalar('train/loss_proto', loss_dict['loss_proto'], global_step)
+                if 'loss_proto' in loss_dict:
+                    writer.add_scalar('train/loss_proto', loss_dict['loss_proto'], global_step)
     
     avg_loss = total_loss / len(dataloader)
     return avg_loss
@@ -296,11 +300,11 @@ def main():
     print(f"[INFO] Total steps: {total_steps}, Warmup steps: {warmup_steps}")
     
     best_val_loss = float('inf')
-    use_mgca = (args.loss in ['mgca', 'gloria'])  # Both need local features
+    use_local_features = (args.loss in ['mgca', 'gloria'])  # Both need local features
     
     for epoch in range(1, args.epochs + 1):
         # Train
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, scheduler, device, epoch, writer, use_mgca)
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, scheduler, device, epoch, writer, use_local_features)
         print(f"\n[Epoch {epoch}/{args.epochs}] Train Loss: {train_loss:.4f}")
         
         if writer:

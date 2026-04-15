@@ -1,6 +1,7 @@
 # BiomedCLIP Fine-tuning
 
 Quick experiments with different contrastive losses for BiomedCLIP fine-tuning.
+This project uses the MedCLIP-SAMv2 virtual environment. Make sure to activate it before running.
 
 ## What's this?
 
@@ -16,14 +17,18 @@ Single training script, different loss functions via `--loss` flag.
 ## Setup
 
 **Prerequisites:**
+- MedCLIP-SAMv2 virtual environment (activate before running)
 - PyTorch 2.0+
 - CUDA-capable GPU (tested on single GPU)
 - Your dataset with images named `benign*.png` or `malignant*.png`
 
-**Install:**
+**Activate Environment:**
 ```bash
-pip install -r requirements.txt
+# Navigate to MedCLIP-SAMv2 directory and activate the virtual environment
+source /path/to/MedCLIP-SAMv2/venv/bin/activate  # Adjust path as needed
 ```
+
+All dependencies are already installed in the MedCLIP-SAMv2 environment.
 
 ## Usage
 
@@ -79,7 +84,3 @@ config.py        # Hyperparameters and prompts
 - Saves checkpoints every 5 epochs
 - TensorBoard logs in `checkpoints/<exp>/logs/`
 - Adjust batch size based on GPU memory
-
-## License
-
-MIT

@@ -82,8 +82,11 @@ def encode_text(texts, model, tokenizer, device):
         
         if hasattr(text_outputs, 'pooler_output'):
             text_features = text_outputs.pooler_output
-        else:
+        elif hasattr(text_outputs, 'last_hidden_state'):
             text_features = text_outputs.last_hidden_state[:, 0, :]
+        else:
+            # If text_outputs is a Tensor directly
+            text_features = text_outputs[:, 0, :]
         text_features = F.normalize(text_features, dim=-1)
     
     return text_features
