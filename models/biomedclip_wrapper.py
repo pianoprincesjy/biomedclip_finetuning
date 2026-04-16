@@ -85,11 +85,11 @@ def get_biomedclip_features_mgca(model, batch):
         batch: Dictionary containing 'imgs', 'caption_ids', 'attention_mask'
         
     Returns:
-        image_features_dict: Dict with 'global' [B, D] and 'local' [B, N, D]
+        image_features_dict: Dict with 'global' [B, D], 'local' [B, N, D], 'attention_map' [B, num_heads, N+1, N+1]
         text_features_dict: Dict with 'global' [B, D], 'local' [B, L, D], 'attention_mask' [B, L]
     """
     # Image features (global + local)
-    image_outputs = model.vision_model(batch['imgs'], output_hidden_states=True)
+    image_outputs = model.vision_model(batch['imgs'], output_hidden_states=True, output_attentions=True)
     
     if hasattr(image_outputs, 'last_hidden_state'):
         hidden_states = image_outputs.last_hidden_state  # [B, 1+N, D]
@@ -98,6 +98,12 @@ def get_biomedclip_features_mgca(model, batch):
     
     img_global = hidden_states[:, 0]  # CLS token [B, D]
     img_local = hidden_states[:, 1:]  # Patch tokens [B, N, D]
+    
+    # Extract attention map from last layer
+    # attentions: tuple of [B, num_heads, seq_len, seq_len] for each layer
+    img_attn_map = None
+    if hasattr(image_outputs, 'attentions') and image_outputs.attentions is not None:
+        img_attn_map = image_outputs.attentions[-1]  # Last layer attention [B, num_heads, N+1, N+1]
     
     # Text features (global + local)
     text_outputs = model.text_model(
@@ -116,7 +122,8 @@ def get_biomedclip_features_mgca(model, batch):
     
     return {
         'global': img_global,
-        'local': img_local
+        'local': img_local,
+        'attention_map': img_attn_map
     }, {
         'global': text_global,
         'local': text_local,

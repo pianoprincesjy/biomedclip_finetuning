@@ -55,6 +55,8 @@ results/
 *.txt
 !requirements.txt
 !README.md
+p2b
+dpo_pipeline_files
 
 # OS
 .DS_Store

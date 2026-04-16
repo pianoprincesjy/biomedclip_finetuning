@@ -159,6 +159,7 @@ class MGCALoss(nn.Module):
         # Extract features
         img_feat = image_features_dict['global']  # [B, D]
         patch_feat = image_features_dict['local']  # [B, N, D]
+        img_attn_map = image_features_dict.get('attention_map', None)  # [B, num_heads, N+1, N+1] or None
         report_feat = text_features_dict['global']  # [B, D]
         word_feat = text_features_dict['local']  # [B, L, D]
         word_attn = text_features_dict['attention_mask'].float()  # [B, L]
@@ -243,9 +244,27 @@ class MGCALoss(nn.Module):
             
             patch_atten_output = F.normalize(patch_atten_output, dim=-1)
             
-            # Uniform patch attention weights (no vision attention map available)
+            # Compute patch attention weights from ViT attention map
             patch_num = patch_emb.size(1)
-            patch_atten_weights = torch.ones(bz, patch_num).to(patch_emb.device) / patch_num
+            if img_attn_map is not None:
+                # Extract CLS token attention to patches from last layer
+                # img_attn_map: [B, num_heads, N+1, N+1]
+                # Take attention from CLS (idx 0) to patches (idx 1:)
+                with torch.no_grad():
+                    atten_weights = img_attn_map[:, :, 0, 1:].mean(dim=1)  # [B, N] average over heads
+                    patch_atten_weights = []
+                    for i in range(bz):
+                        atten_weight = atten_weights[i]
+                        # Clip to 10-90 percentile
+                        low = torch.quantile(atten_weight, 0.1)
+                        high = torch.quantile(atten_weight, 0.9)
+                        atten_weight = atten_weight.clip(low, high)
+                        patch_atten_weights.append(atten_weight)
+                    patch_atten_weights = torch.stack(patch_atten_weights)
+                    patch_atten_weights /= (patch_atten_weights.sum(dim=1, keepdim=True) + 1e-8)
+            else:
+                # Fallback to uniform weights if attention map not available
+                patch_atten_weights = torch.ones(bz, patch_num).to(patch_emb.device) / patch_num
             
             patch_sim = torch.bmm(patch_emb, patch_atten_output.permute(0, 2, 1)) / self.local_temperature
             patch_sim_1 = rearrange(patch_sim, "b n1 n2 -> (b n1) n2")
