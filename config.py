@@ -96,6 +96,11 @@ LOSS_CONFIGS = {
         'lambda_global': 1.0,
         'lambda_local': 1.0,
         'local_agg': 'sum',  # 'sum' or 'mean'
+    },
+    'dpo': {
+        'alpha': 1.0,  # scaling factor for cosine similarity
+        'beta': 10.0,  # DPO temperature (higher = stronger preference)
+        'ref_checkpoint': '/home/jaey00ns/MedCLIP-SAMv2-main/saliency_maps/model/pytorch_model_medclipsam.bin',
     }
 }
 

@@ -29,8 +29,8 @@ except ImportError:
 
 from config import DEFAULT_BIOMEDCLIP_CHECKPOINT, LOSS_CONFIGS, DEFAULT_TRAINING_CONFIG
 from models import load_biomedclip, get_biomedclip_features, get_biomedclip_features_mgca
-from data import TumorDataset
-from losses import CLIPLoss, SigLIPLoss, HardNegativeLoss, MGCALoss, GLoRIALoss
+from data import TumorDataset, DPOTumorDataset
+from losses import CLIPLoss, SigLIPLoss, HardNegativeLoss, MGCALoss, GLoRIALoss, DPOLoss
 
 
 def parse_args():
@@ -49,8 +49,12 @@ def parse_args():
     
     # Loss function
     parser.add_argument('--loss', type=str, default='clip',
-                        choices=['clip', 'siglip', 'hnl', 'mgca', 'gloria'],
+                        choices=['clip', 'siglip', 'hnl', 'mgca', 'gloria', 'dpo'],
                         help='Loss function to use')
+    
+    # DPO specific arguments
+    parser.add_argument('--neg-dir', type=str, default=None,
+                        help='Negative images directory for DPO (required if using DPO loss)')
     
     # Training hyperparameters
     parser.add_argument('--batch-size', type=int, default=DEFAULT_TRAINING_CONFIG['batch_size'])
@@ -124,38 +128,85 @@ def create_loss_function(loss_name):
             lambda_local=config['lambda_local'],
             local_agg=config['local_agg']
         )
+    elif loss_name == 'dpo':
+        return DPOLoss(
+            alpha=config['alpha'],
+            beta=config['beta']
+        )
     else:
         raise ValueError(f"Unknown loss function: {loss_name}")
 
 
-def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoch, writer=None, use_local_features=False):
+def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoch, writer=None, use_local_features=False, ref_model=None):
     """Train for one epoch"""
     model.train()
+    if ref_model is not None:
+        ref_model.eval()
     
     total_loss = 0
     progress_bar = tqdm(dataloader, desc=f"Epoch {epoch}")
     
     for batch_idx, batch in enumerate(progress_bar):
-        # Move to device
-        imgs = batch['imgs'].to(device)
-        caption_ids = batch['caption_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        
-        batch_on_device = {
-            'imgs': imgs,
-            'caption_ids': caption_ids,
-            'attention_mask': attention_mask
-        }
-        
-        # Forward pass
-        if use_local_features:
-            # MGCA and GLoRIA require global and local features
-            image_features_dict, text_features_dict = get_biomedclip_features_mgca(model, batch_on_device)
-            loss, loss_dict = criterion(image_features_dict, text_features_dict)
+        # DPO mode
+        if ref_model is not None:
+            # Move to device
+            imgs_pos = batch['imgs_pos'].to(device)
+            caption_ids_pos = batch['caption_ids_pos'].to(device)
+            attention_mask_pos = batch['attention_mask_pos'].to(device)
+            imgs_neg = batch['imgs_neg'].to(device)
+            caption_ids_neg = batch['caption_ids_neg'].to(device)
+            attention_mask_neg = batch['attention_mask_neg'].to(device)
+            
+            # Policy model forward (positive)
+            batch_pos = {
+                'imgs': imgs_pos,
+                'caption_ids': caption_ids_pos,
+                'attention_mask': attention_mask_pos
+            }
+            img_feat_pos, txt_feat_pos = get_biomedclip_features(model, batch_pos)
+            
+            # Policy model forward (negative)
+            batch_neg = {
+                'imgs': imgs_neg,
+                'caption_ids': caption_ids_neg,
+                'attention_mask': attention_mask_neg
+            }
+            img_feat_neg, txt_feat_neg = get_biomedclip_features(model, batch_neg)
+            
+            # Reference model forward (no grad)
+            with torch.no_grad():
+                ref_img_feat_pos, ref_txt_feat_pos = get_biomedclip_features(ref_model, batch_pos)
+                ref_img_feat_neg, ref_txt_feat_neg = get_biomedclip_features(ref_model, batch_neg)
+            
+            # Compute DPO loss
+            loss = criterion(
+                img_feat_pos, txt_feat_pos,
+                img_feat_neg, txt_feat_neg,
+                ref_img_feat_pos, ref_txt_feat_pos,
+                ref_img_feat_neg, ref_txt_feat_neg
+            )
         else:
-            # Simple losses only need global features
-            image_features, text_features = get_biomedclip_features(model, batch_on_device)
-            loss = criterion(image_features, text_features)
+            # Standard mode
+            # Move to device
+            imgs = batch['imgs'].to(device)
+            caption_ids = batch['caption_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            
+            batch_on_device = {
+                'imgs': imgs,
+                'caption_ids': caption_ids,
+                'attention_mask': attention_mask
+            }
+            
+            # Forward pass
+            if use_local_features:
+                # MGCA and GLoRIA require global and local features
+                image_features_dict, text_features_dict = get_biomedclip_features_mgca(model, batch_on_device)
+                loss, loss_dict = criterion(image_features_dict, text_features_dict)
+            else:
+                # Simple losses only need global features
+                image_features, text_features = get_biomedclip_features(model, batch_on_device)
+                loss = criterion(image_features, text_features)
         
         # Backward pass
         optimizer.zero_grad()
@@ -168,7 +219,9 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
         
         # Logging
         total_loss += loss.item()
-        if use_local_features:
+        if ref_model is not None:
+            progress_bar.set_postfix({'loss': f'{loss.item():.4f}'})
+        elif use_local_features:
             postfix = {
                 'loss': f'{loss.item():.4f}',
                 'global': f"{loss_dict['loss_global']:.4f}",
@@ -186,7 +239,7 @@ def train_epoch(model, dataloader, criterion, optimizer, scheduler, device, epoc
             global_step = epoch * len(dataloader) + batch_idx
             writer.add_scalar('train/loss_step', loss.item(), global_step)
             writer.add_scalar('train/lr', optimizer.param_groups[0]['lr'], global_step)
-            if use_local_features:
+            if use_local_features and ref_model is None:
                 writer.add_scalar('train/loss_global', loss_dict['loss_global'], global_step)
                 writer.add_scalar('train/loss_local', loss_dict['loss_local'], global_step)
                 if 'loss_proto' in loss_dict:
@@ -225,6 +278,10 @@ def validate(model, dataloader, criterion, device):
 def main():
     args = parse_args()
     
+    # Validate DPO arguments
+    if args.loss == 'dpo' and args.neg_dir is None:
+        raise ValueError("--neg-dir is required when using DPO loss")
+    
     # Set seed
     set_seed(args.seed)
     
@@ -252,15 +309,61 @@ def main():
     # Load model
     model, tokenizer, processor = load_biomedclip(args.model_checkpoint, device)
     
+    # Load reference model for DPO
+    ref_model = None
+    if args.loss == 'dpo':
+        print("[INFO] Loading reference model for DPO...")
+        ref_checkpoint = LOSS_CONFIGS['dpo']['ref_checkpoint']
+        
+        # Load reference model
+        ref_model, _, _ = load_biomedclip(args.model_checkpoint, device)
+        
+        # Load reference weights
+        if ref_checkpoint.endswith('.bin'):
+            # Load HuggingFace format weights
+            state_dict = torch.load(ref_checkpoint, map_location=device)
+            # Load into ref_model (this may need conversion depending on format)
+            try:
+                ref_model.load_state_dict(state_dict, strict=False)
+                print(f"[INFO] Loaded reference weights from {ref_checkpoint}")
+            except Exception as e:
+                print(f"[WARNING] Could not load reference weights directly: {e}")
+                print(f"[INFO] Attempting to load into model components...")
+                # Try loading into vision and text models separately
+                try:
+                    ref_model.vision_model.load_state_dict(state_dict, strict=False)
+                    ref_model.text_model.load_state_dict(state_dict, strict=False)
+                    print(f"[INFO] Loaded reference weights into vision/text models")
+                except Exception as e2:
+                    print(f"[ERROR] Failed to load reference weights: {e2}")
+                    print(f"[INFO] Using pretrained weights as reference")
+        
+        ref_model.eval()
+        for param in ref_model.parameters():
+            param.requires_grad = False
+        print("[INFO] Reference model initialized and frozen")
+    
     # Create datasets
-    train_dataset = TumorDataset(args.train_dir, processor, tokenizer)
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=True
-    )
+    if args.loss == 'dpo':
+        # DPO dataset with positive/negative pairs
+        train_dataset = DPOTumorDataset(args.train_dir, args.neg_dir, processor, tokenizer)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True
+        )
+    else:
+        # Standard dataset
+        train_dataset = TumorDataset(args.train_dir, processor, tokenizer)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True
+        )
     
     val_loader = None
     if args.val_dir:
@@ -304,7 +407,7 @@ def main():
     
     for epoch in range(1, args.epochs + 1):
         # Train
-        train_loss = train_epoch(model, train_loader, criterion, optimizer, scheduler, device, epoch, writer, use_local_features)
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, scheduler, device, epoch, writer, use_local_features, ref_model)
         print(f"\n[Epoch {epoch}/{args.epochs}] Train Loss: {train_loss:.4f}")
         
         if writer:

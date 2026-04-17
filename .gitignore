@@ -57,7 +57,10 @@ results/
 !README.md
 p2b
 dpo_pipeline_files
-
+dpo.md
+train_dpo.sh
+dpo_loss.py
+dpo_tumor_dataset.py
 # OS
 .DS_Store
 Thumbs.db
