@@ -30,15 +30,15 @@ except ImportError:
 from config import DEFAULT_BIOMEDCLIP_CHECKPOINT, LOSS_CONFIGS, DEFAULT_TRAINING_CONFIG
 from models import load_biomedclip, get_biomedclip_features, get_biomedclip_features_mgca
 from data import TumorDataset, DPOTumorDataset
-from losses import CLIPLoss, SigLIPLoss, HardNegativeLoss, MGCALoss, GLoRIALoss, DPOLoss
+from losses import CLIPLoss, SigLIPLoss, HardNegativeLoss, MGCALoss, GLoRIALoss, DPOLoss, CLIPRefineLoss
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fine-tune BiomedCLIP with various losses")
     
     # Data
-    parser.add_argument('--train-dir', type=str, required=True, 
-                        help='Training images directory')
+    parser.add_argument('--train-dir', type=str, required=False, 
+                        help='Training images directory (not required for DPO with CSV)')
     parser.add_argument('--val-dir', type=str, default=None,
                         help='Validation images directory (optional)')
     
@@ -49,12 +49,14 @@ def parse_args():
     
     # Loss function
     parser.add_argument('--loss', type=str, default='clip',
-                        choices=['clip', 'siglip', 'hnl', 'mgca', 'gloria', 'dpo'],
+                        choices=['clip', 'siglip', 'hnl', 'mgca', 'gloria', 'dpo', 'cliprefine'],
                         help='Loss function to use')
     
     # DPO specific arguments
+    parser.add_argument('--dpo-csv', type=str, default=None,
+                        help='CSV file for DPO training (required if using DPO loss)')
     parser.add_argument('--neg-dir', type=str, default=None,
-                        help='Negative images directory for DPO (required if using DPO loss)')
+                        help='Negative images directory for DPO (deprecated, use --dpo-csv instead)')
     
     # Training hyperparameters
     parser.add_argument('--batch-size', type=int, default=DEFAULT_TRAINING_CONFIG['batch_size'])
@@ -132,6 +134,18 @@ def create_loss_function(loss_name):
         return DPOLoss(
             alpha=config['alpha'],
             beta=config['beta']
+        )
+    elif loss_name == 'cliprefine':
+        return CLIPRefineLoss(
+            temperature=config['temperature'],
+            lambda_rand=config['lambda_rand'],
+            strategy=config['strategy'],
+            share_random_feat=config['share_random_feat'],
+            mu=config['mu'],
+            sigma=config['sigma'],
+            precomputed_stats=config['precomputed_stats'],
+            regularization_decay=config['regularization_decay'],
+            max_iteration=config['max_iteration']
         )
     else:
         raise ValueError(f"Unknown loss function: {loss_name}")
@@ -278,9 +292,16 @@ def validate(model, dataloader, criterion, device):
 def main():
     args = parse_args()
     
-    # Validate DPO arguments
-    if args.loss == 'dpo' and args.neg_dir is None:
-        raise ValueError("--neg-dir is required when using DPO loss")
+    # Validate arguments based on loss type
+    if args.loss == 'dpo':
+        if args.dpo_csv is None and args.neg_dir is None:
+            raise ValueError("Either --dpo-csv or --neg-dir is required when using DPO loss")
+        if args.dpo_csv is not None and args.neg_dir is not None:
+            raise ValueError("Cannot use both --dpo-csv and --neg-dir. Please use --dpo-csv for CSV-based DPO training")
+    else:
+        # For non-DPO losses, --train-dir is required
+        if args.train_dir is None:
+            raise ValueError(f"--train-dir is required when using {args.loss} loss")
     
     # Set seed
     set_seed(args.seed)
@@ -346,7 +367,14 @@ def main():
     # Create datasets
     if args.loss == 'dpo':
         # DPO dataset with positive/negative pairs
-        train_dataset = DPOTumorDataset(args.train_dir, args.neg_dir, processor, tokenizer)
+        if args.dpo_csv is not None:
+            # CSV-based DPO dataset
+            from data.dpo_tumor_dataset import DPOTumorDataset
+            train_dataset = DPOTumorDataset(args.dpo_csv, processor, tokenizer)
+        else:
+            # Legacy: directory-based DPO dataset
+            from data.tumor_dataset import DPOTumorDataset
+            train_dataset = DPOTumorDataset(args.train_dir, args.neg_dir, processor, tokenizer)
         train_loader = DataLoader(
             train_dataset,
             batch_size=args.batch_size,

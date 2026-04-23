@@ -162,7 +162,17 @@ class MGCALoss(nn.Module):
         img_attn_map = image_features_dict.get('attention_map', None)  # [B, num_heads, N+1, N+1] or None
         report_feat = text_features_dict['global']  # [B, D]
         word_feat = text_features_dict['local']  # [B, L, D]
-        word_attn = text_features_dict['attention_mask'].float()  # [B, L]
+        
+        # Use BERT attention weights if available, otherwise fall back to attention mask
+        if text_features_dict.get('attention_weights') is not None:
+            # BERT attention weights (semantic importance) - same as MGCA
+            word_attn = text_features_dict['attention_weights']  # [B, L-1]
+            # Pad to match word_feat length (add CLS token attention)
+            padding = torch.ones(word_attn.size(0), 1).to(word_attn.device) * word_attn.mean()
+            word_attn = torch.cat([padding, word_attn], dim=1)  # [B, L]
+        else:
+            # Fallback: use attention mask (0/1 padding indicator)
+            word_attn = text_features_dict['attention_mask'].float()  # [B, L]
         
         # Project to embedding space
         img_emb = self.img_global_embed(img_feat)

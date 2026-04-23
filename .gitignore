@@ -61,6 +61,13 @@ dpo.md
 train_dpo.sh
 dpo_loss.py
 dpo_tumor_dataset.py
+debug
+experiments_10epoch
+experiments_cliprefine
+experiments_mgca
+clip-refine
+pruning
+tt_dpo.sh
 # OS
 .DS_Store
 Thumbs.db

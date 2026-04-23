@@ -16,13 +16,13 @@ set -e  # Exit on error
 # Configuration
 TRAIN_DIR="/home/jaey00ns/MedCLIP-SAMv2-main/data/breast_tumors/ttest"
 TEST_DIR="/home/jaey00ns/MedCLIP-SAMv2-main/data/breast_tumors/ttrain"
-BASE_OUTPUT_DIR="experiments_all"
+BASE_OUTPUT_DIR="experiments_cliprefine"
 EPOCHS=50
 GPU_ID=5
 
 # Loss functions to test
-LOSSES=("clip" "siglip" "hnl" "mgca" "gloria")
-
+#LOSSES=("clip" "siglip" "hnl" "mgca" "gloria")
+LOSSES=("cliprefine")
 # Batch sizes to test
 BATCH_SIZES=(2 4 20 40 80)
 

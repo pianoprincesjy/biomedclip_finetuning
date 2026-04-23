@@ -9,6 +9,7 @@ from .hnl_loss import HardNegativeLoss
 from .mgca_loss import MGCALoss
 from .gloria_loss import GLoRIALoss
 from .dpo_loss import DPOLoss
+from .cliprefine_loss import CLIPRefineLoss
 
 __all__ = [
     'CLIPLoss',
@@ -17,4 +18,5 @@ __all__ = [
     'MGCALoss',
     'GLoRIALoss',
     'DPOLoss',
+    'CLIPRefineLoss',
 ]

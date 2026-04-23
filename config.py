@@ -101,6 +101,17 @@ LOSS_CONFIGS = {
         'alpha': 1.0,  # scaling factor for cosine similarity
         'beta': 10.0,  # DPO temperature (higher = stronger preference)
         'ref_checkpoint': '/home/jaey00ns/MedCLIP-SAMv2-main/saliency_maps/model/pytorch_model_medclipsam.bin',
+    },
+    'cliprefine': {
+        'temperature': 1.0,
+        'lambda_rand': 1.0,  # weight for random feature regularization
+        'strategy': 'std_sample',  # std_sample, uniform_sample, precomputed_sample, uniform_fixed, precomputed_fixed
+        'share_random_feat': True,  # whether to use same random feature for image and text
+        'mu': 0.0,  # mean for random distribution
+        'sigma': 1.0,  # std/upper bound for random distribution
+        'precomputed_stats': None,  # path to .npz file with precomputed statistics (optional)
+        'regularization_decay': False,  # whether to decay regularization weight over training
+        'max_iteration': None,  # required if regularization_decay=True
     }
 }
 
